@@ -76,9 +76,11 @@ docker run -p 8501:8501 --env-file .env pocket-interview-streamlit
    FIREWORKS_BASE_URL = "https://openrouter.ai/api/v1"
    GEMMA_MODEL = "google/gemma-4-26b-a4b-it"
    ```
-4. Deploy. Streamlit Cloud installs `requirements.txt` automatically — no Dockerfile needed for this
-   path (the Dockerfile is provided to satisfy the hackathon's containerization requirement and for
-   self-hosting elsewhere).
+4. Deploy. Streamlit Cloud installs `requirements.txt` (Python packages) and `packages.txt` (system
+   packages -- just `ffmpeg`, needed by `faster-whisper`/`librosa`) automatically. No Dockerfile
+   needed for this path (the Dockerfile is provided to satisfy the hackathon's containerization
+   requirement and for self-hosting elsewhere). First deploy takes a few minutes since it's building
+   the whole ML dependency stack from scratch.
 
 ## Environment variables
 
