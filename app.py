@@ -1,10 +1,12 @@
 import os
+import random
 import tempfile
 
 import plotly.graph_objects as go
 import streamlit as st
 from streamlit_mic_recorder import mic_recorder
 
+from services import export as export_service
 from services import interview
 from services import resume as resume_service
 from services.llm import LLMOverride, PERSONAS, SESSION_TYPES
@@ -14,10 +16,24 @@ st.set_page_config(page_title="Pocket Interview Coach", page_icon="🎤", layout
 
 ACCENT = "#9b6bff"
 ACCENT_2 = "#2dd4ee"
+ACCENT_3 = "#ff8a5c"
 
 PRESET_ROLES = ["Software Engineer", "Product Manager", "Data Analyst"]
+SURPRISE_ROLES = [
+    ("UX Designer", "Figma"),
+    ("Data Scientist", "Netflix"),
+    ("DevOps Engineer", "Stripe"),
+    ("Marketing Manager", "Notion"),
+    ("Solutions Architect", "AMD"),
+    ("Mechanical Engineer", "Tesla"),
+    ("Nurse Practitioner", "Mayo Clinic"),
+    ("High School Teacher", ""),
+    ("Restaurant General Manager", ""),
+    ("Venture Capital Associate", "Sequoia"),
+]
 EXPERIENCE_LEVELS = ["Entry-level (0-1 yrs)", "Mid-level (2-5 yrs)", "Senior (5+ yrs)", "Staff/Lead (8+ yrs)"]
 SAMPLE_ANSWER_MODES = {"After each answer": "after", "At the end": "end", "Don't show": "off"}
+STAR_LABELS = {"situation": "Situation", "task": "Task", "action": "Action", "result": "Result"}
 
 st.markdown(
     f"""
@@ -55,6 +71,9 @@ def init_state():
         "byok_base_url": "",
         "byok_model": "",
         "drill_prefill": None,
+        "timer_enabled": False,
+        "timer_seconds": 90,
+        "surprise_pick": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -134,6 +153,85 @@ def score_gauge(value: int, title: str, color: str):
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 
+def performance_radar(axes: dict, key: str):
+    categories = list(axes.keys())
+    values = list(axes.values())
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatterpolar(
+            r=values + [values[0]],
+            theta=categories + [categories[0]],
+            fill="toself",
+            line=dict(color=ACCENT_2),
+            fillcolor="rgba(45,212,238,0.25)",
+        )
+    )
+    fig.update_layout(
+        polar=dict(
+            bgcolor="rgba(0,0,0,0)",
+            radialaxis=dict(visible=True, range=[0, 100], color="#8888a0", gridcolor="#292942"),
+            angularaxis=dict(color="#cfcfe6", gridcolor="#292942"),
+        ),
+        showlegend=False,
+        height=280,
+        margin=dict(l=40, r=40, t=20, b=20),
+        paper_bgcolor="rgba(0,0,0,0)",
+    )
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False}, key=key)
+
+
+def answer_radar_axes(answer) -> dict:
+    ideal_pace_score = max(0.0, 1 - abs(answer.words_per_minute - 140) / 140) * 100
+    filler_score = max(0.0, 1 - answer.filler_word_count / 5) * 100
+    return {
+        "Content": answer.content_score,
+        "Delivery": answer.delivery_score,
+        "Pace": round(ideal_pace_score),
+        "Tone": round(answer.pitch_variation * 100),
+        "Low fillers": round(filler_score),
+    }
+
+
+def star_checklist(star_components: dict):
+    if not star_components or not any(star_components.values()):
+        return
+    cols = st.columns(4)
+    for i, (key, label) in enumerate(STAR_LABELS.items()):
+        present = star_components.get(key, False)
+        with cols[i]:
+            st.markdown(f"{'✅' if present else '⬜'} {label}")
+
+
+def countdown_timer(seconds: int, key: str):
+    st.components.v1.html(
+        f"""
+        <div id="timer-{key}" style="
+            font-family: monospace; font-size: 1rem; color: #cfcfe6; text-align: center;
+            border: 1px solid #292942; border-radius: 999px; padding: 6px 14px; display: inline-block;">
+            ⏱ --:--
+        </div>
+        <script>
+        (function() {{
+            let remaining = {seconds};
+            const el = document.getElementById("timer-{key}");
+            const tick = () => {{
+                const m = String(Math.floor(remaining / 60)).padStart(2, '0');
+                const s = String(remaining % 60).padStart(2, '0');
+                el.innerHTML = "⏱ " + m + ":" + s;
+                el.style.color = remaining <= 10 ? "#ff6b6b" : "#cfcfe6";
+                if (remaining > 0) {{
+                    remaining -= 1;
+                    setTimeout(tick, 1000);
+                }}
+            }};
+            tick();
+        }})();
+        </script>
+        """,
+        height=50,
+    )
+
+
 def setup_page():
     st.markdown('<h1 class="gradient-text">Pocket Interview Coach</h1>', unsafe_allow_html=True)
     st.write(
@@ -143,11 +241,25 @@ def setup_page():
 
     prefill = st.session_state.drill_prefill or {}
 
+    top_cols = st.columns([3, 1])
+    with top_cols[1]:
+        if st.button("🎲 Surprise me", use_container_width=True):
+            st.session_state.surprise_pick = random.choice(SURPRISE_ROLES)
+            st.rerun()
+
+    surprise_role, surprise_company = st.session_state.surprise_pick or ("", "")
+
     with st.form("setup_form"):
-        role = st.text_input("Target role", value=prefill.get("role", ""), placeholder="e.g. Senior Backend Engineer")
+        role = st.text_input(
+            "Target role",
+            value=surprise_role or prefill.get("role", ""),
+            placeholder="e.g. Senior Backend Engineer",
+        )
         st.caption("Presets: " + " · ".join(PRESET_ROLES))
 
-        company = st.text_input("Company (optional)", value=prefill.get("company", ""), placeholder="e.g. Acme Corp")
+        company = st.text_input(
+            "Company (optional)", value=surprise_company or prefill.get("company", ""), placeholder="e.g. Acme Corp"
+        )
 
         session_type = st.selectbox("Session type", list(SESSION_TYPES.keys()), format_func=lambda k: SESSION_TYPES[k]["label"])
 
@@ -170,6 +282,14 @@ def setup_page():
 
         sample_mode_label = st.radio("Sample answers", list(SAMPLE_ANSWER_MODES.keys()), horizontal=True, index=1)
 
+        tcol1, tcol2 = st.columns([1, 2])
+        with tcol1:
+            timer_enabled = st.checkbox("Enable answer timer", value=st.session_state.timer_enabled)
+        with tcol2:
+            timer_seconds = st.slider(
+                "Timer duration (seconds)", 30, 300, st.session_state.timer_seconds, step=15, disabled=not timer_enabled
+            )
+
         drill_focus = prefill.get("drill_focus", "")
         if drill_focus:
             st.info(f"🎯 Weakness drill: focused practice on **{drill_focus}**")
@@ -182,6 +302,9 @@ def setup_page():
             return
 
         st.session_state.sample_answer_mode = SAMPLE_ANSWER_MODES[sample_mode_label]
+        st.session_state.timer_enabled = timer_enabled
+        st.session_state.timer_seconds = timer_seconds
+        st.session_state.surprise_pick = None
 
         resume_text = ""
         if resume_file is not None:
@@ -246,6 +369,8 @@ def session_page():
 
         if question.answer is None:
             st.write("")
+            if st.session_state.timer_enabled:
+                countdown_timer(st.session_state.timer_seconds, key=f"timer_{question.id}")
             audio = mic_recorder(start_prompt="🎙️ Record Answer", stop_prompt="⏹️ Stop", format="wav", key=f"rec_{question.id}")
             if audio and audio.get("bytes"):
                 with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
@@ -253,7 +378,9 @@ def session_page():
                     tmp_path = tmp.name
                 try:
                     with st.spinner("Transcribing and scoring your answer..."):
-                        answer, follow_up = interview.process_answer(session, question, tmp_path, get_override())
+                        answer, follow_up = interview.process_answer(
+                            session, question, tmp_path, get_override(), audio_bytes=audio["bytes"]
+                        )
                     st.session_state.current_feedback = answer
                     if follow_up:
                         st.toast("Your interviewer added a follow-up question!", icon="🔍")
@@ -275,6 +402,14 @@ def session_page():
             mcols[1].metric("Fillers", answer.filler_word_count)
             mcols[2].metric("Pauses", f"{answer.pause_ratio * 100:.0f}%")
             mcols[3].metric("Tone variation", f"{answer.pitch_variation * 100:.0f}%")
+
+            if answer.audio_bytes:
+                st.audio(answer.audio_bytes, format="audio/wav")
+
+            with st.expander("Performance breakdown (radar)"):
+                performance_radar(answer_radar_axes(answer), key=f"radar_{question.id}")
+
+            star_checklist(answer.star_components)
 
             if len(answer.delivery_timeline) > 1:
                 fig = go.Figure()
@@ -329,6 +464,18 @@ def report_page():
 
     st.markdown('<h1 class="gradient-text">Session Report</h1>', unsafe_allow_html=True)
 
+    readiness = session.readiness
+    celebrate_key = f"celebrated_{session.id}"
+    if readiness["grade"] in ("A", "B") and not st.session_state.get(celebrate_key):
+        st.balloons()
+        st.session_state[celebrate_key] = True
+
+    st.markdown(
+        f"### Interview Readiness: {readiness['score']}/100 &nbsp; "
+        f'<span class="persona-badge">Grade {readiness["grade"]}</span>',
+        unsafe_allow_html=True,
+    )
+
     gcols = st.columns(2)
     with gcols[0]:
         score_gauge(session.avg_content_score, "Avg Content", ACCENT)
@@ -338,6 +485,39 @@ def report_page():
     st.write(session.summary)
 
     answered = session.answered_questions
+
+    if len(answered) >= 1:
+        avg_axes = {}
+        for key in ["Content", "Delivery", "Pace", "Tone", "Low fillers"]:
+            avg_axes[key] = round(sum(answer_radar_axes(q.answer)[key] for q in answered) / len(answered))
+        with st.expander("Overall performance breakdown (radar)"):
+            performance_radar(avg_axes, key="report_radar")
+
+    export_cols = st.columns(3)
+    with export_cols[0]:
+        st.download_button(
+            "📄 Download PDF",
+            data=export_service.generate_report_pdf(session),
+            file_name="interview_report.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+        )
+    with export_cols[1]:
+        st.download_button(
+            "📝 Download transcript",
+            data=export_service.generate_transcript_text(session),
+            file_name="interview_transcript.txt",
+            mime="text/plain",
+            use_container_width=True,
+        )
+    with export_cols[2]:
+        st.download_button(
+            "🗂 Download JSON",
+            data=export_service.generate_report_json(session),
+            file_name="interview_report.json",
+            mime="application/json",
+            use_container_width=True,
+        )
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=[f"Q{i+1}" for i in range(len(answered))], y=[q.answer.content_score for q in answered], name="Content", line=dict(color=ACCENT)))
     fig.add_trace(go.Scatter(x=[f"Q{i+1}" for i in range(len(answered))], y=[q.answer.delivery_score for q in answered], name="Delivery", line=dict(color=ACCENT_2)))

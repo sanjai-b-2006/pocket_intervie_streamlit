@@ -24,6 +24,13 @@ UI framework and hosting model changed.
 - Per-answer delivery timeline chart (pace/tone over time), end-of-session score trend chart
 - Personalized post-session **cheat sheet**
 - **Bring-your-own-key** — override the app's default API key/base URL/model right in the sidebar
+- **STAR-method breakdown** — a situation/task/action/result checklist per behavioral answer
+- **Multi-axis performance radar** (content, delivery, pace, tone, low-fillers) per answer and
+  averaged across the whole session
+- **Own-answer playback** — listen back to exactly what you recorded, next to the AI feedback
+- **Interview readiness score + letter grade**, with a celebratory `st.balloons()` on a strong result
+- **Export your report** as PDF, plain-text transcript, or JSON, one click each
+- **"Surprise me"** role randomizer and an optional visual countdown timer during recording
 
 ## What's different from the FastAPI + Next.js version
 

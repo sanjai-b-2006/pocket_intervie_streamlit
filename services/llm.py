@@ -299,6 +299,9 @@ class GemmaClient:
             "content_feedback (string, 1-3 sentences on structure/specificity/STAR method), "
             "delivery_feedback (string, 1-3 sentences translating the raw speech metrics into "
             "plain-English coaching about pace, tone/monotone, filler words, and pauses), "
+            "star_components (object with boolean keys situation, task, action, result -- true if "
+            "the answer clearly included that STAR element, false if it was missing or too vague; "
+            "only meaningful for behavioral/story-style questions, otherwise set all to false), "
             "follow_up (string or null: a natural, challenging follow-up question a real "
             f"interviewer -- specifically {persona_desc} -- would ask to probe deeper or play "
             "devil's advocate if this answer left something unexplored or unconvincing; null if "
@@ -313,7 +316,7 @@ class GemmaClient:
             f"pause_ratio={prosody['pause_ratio']:.2f} (fraction of time silent), "
             f"volume_consistency={prosody['volume_consistency']:.2f} (1=very steady)."
         )
-        content = self._chat(system, user, override, max_tokens=400)
+        content = self._chat(system, user, override, max_tokens=500)
         return _extract_json(content)
 
     def generate_report(

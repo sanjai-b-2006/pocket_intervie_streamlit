@@ -31,6 +31,8 @@ class Answer:
     delivery_score: int = 0
     content_feedback: str = ""
     delivery_feedback: str = ""
+    star_components: Dict[str, bool] = field(default_factory=dict)
+    audio_bytes: Optional[bytes] = None
 
 
 @dataclass
@@ -66,3 +68,18 @@ class InterviewSession:
         if not answered:
             return 0
         return round(sum(q.answer.delivery_score for q in answered) / len(answered))
+
+    @property
+    def readiness(self) -> Dict[str, Any]:
+        score = round(self.avg_content_score * 0.6 + self.avg_delivery_score * 0.4)
+        if score >= 90:
+            grade = "A"
+        elif score >= 80:
+            grade = "B"
+        elif score >= 70:
+            grade = "C"
+        elif score >= 60:
+            grade = "D"
+        else:
+            grade = "F"
+        return {"score": score, "grade": grade}

@@ -57,6 +57,7 @@ def process_answer(
     question: Question,
     audio_path: str,
     override: Optional[LLMOverride] = None,
+    audio_bytes: Optional[bytes] = None,
 ) -> Tuple[Answer, Optional[Question]]:
     transcript = asr.transcribe(audio_path)
     features = prosody.compute_prosody(audio_path, transcript)
@@ -84,6 +85,8 @@ def process_answer(
         delivery_score=int(feedback["delivery_score"]),
         content_feedback=feedback["content_feedback"],
         delivery_feedback=feedback["delivery_feedback"],
+        star_components=feedback.get("star_components", {}) or {},
+        audio_bytes=audio_bytes,
     )
     question.answer = answer
 

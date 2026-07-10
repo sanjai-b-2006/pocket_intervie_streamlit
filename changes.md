@@ -111,3 +111,36 @@ Gemma 4 API, using a synthetic WAV file (pure Python `wave` module, no `ffmpeg` 
 This confirmed panel-mode persona rotation, scoring, delivery timelines, and — notably — the
 devil's-advocate follow-up question actually firing when the (deliberately garbled) test transcript
 was unclear, proving that code path end-to-end rather than just by inspection.
+
+## 7. Extra features added after the initial Streamlit port
+
+Once the base rebuild was verified, a second pass added features specifically chosen to fit
+Streamlit's execution model well (as opposed to the ones explicitly dropped in section 4):
+
+- **STAR-method breakdown** — `generate_answer_feedback`'s prompt now also returns a
+  `star_components` object (situation/task/action/result booleans), rendered as a checklist so the
+  candidate can see exactly which part of the STAR structure their answer was missing.
+- **Multi-axis performance radar chart** (Plotly `Scatterpolar`) — content, delivery, pace-vs-ideal,
+  tone expressiveness, and low-filler-usage on one glanceable chart, both per-answer and averaged
+  across the whole session on the report page.
+- **Own-answer playback** — the raw recorded audio bytes are now kept on the `Answer` object so
+  `st.audio()` can play back exactly what you said, right next to the feedback.
+- **Interview readiness score + letter grade** (60/40 weighted blend of content/delivery scores),
+  with `st.balloons()` firing once per session on a strong (A/B) result.
+- **Exports**: PDF (via `fpdf2`), plain-text transcript, and JSON, all as one-click download buttons
+  on the report page.
+- **"Surprise me" role randomizer** and an optional **visual countdown timer** during recording
+  (implemented as a display-only embedded JS clock via `st.components.v1.html`, since the
+  `streamlit-mic-recorder` component doesn't expose a JS hook we can call into to auto-stop
+  recording — it's a pressure cue, not an enforced cutoff).
+
+### Bug caught while adding these: `fpdf2` "Not enough horizontal space"
+
+The first PDF-export implementation mixed `cell(0, h, text, ln=True)` (legacy line-break API) with
+`multi_cell(0, h, text)` calls, and crashed with `FPDFException: Not enough horizontal space to
+render a single character` on the second question's transcript line — the cell/multi_cell cursor
+tracking drifted enough that the reported available width hit zero. Root-caused by testing the
+export functions directly against a small synthetic session (no LLM call needed to test this path)
+rather than assuming the first draft worked. Fixed by dropping `cell(..., ln=True)` entirely,
+routing every text block through `multi_cell` with an explicit `pdf.set_x(pdf.l_margin)` reset
+beforehand, which eliminates the ambiguity instead of just working around one instance of it.
