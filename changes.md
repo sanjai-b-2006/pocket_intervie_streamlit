@@ -144,3 +144,19 @@ export functions directly against a small synthetic session (no LLM call needed 
 rather than assuming the first draft worked. Fixed by dropping `cell(..., ln=True)` entirely,
 routing every text block through `multi_cell` with an explicit `pdf.set_x(pdf.l_margin)` reset
 beforehand, which eliminates the ambiguity instead of just working around one instance of it.
+
+## 8. Streamlit Community Cloud build failure: wrong Python version
+
+First deploy attempt failed during dependency install: `av==12.3.0` (a `faster-whisper` dependency)
+tried to build from source and failed with `pkg-config is required for building PyAV`, and the
+fallback pip install path then got stuck compiling `numpy`/`pandas` from source too (extremely slow,
+looked "stuck" but was really just a multi-minute C/Cython build). Root cause: Streamlit Cloud had
+provisioned a **Python 3.14** environment for the app, and none of `av`, `numpy==1.26.4`, or
+`pandas==2.2.3`'s pinned versions publish prebuilt wheels for that (very new) Python version yet, so
+pip had to compile everything from source instead of just downloading a wheel.
+
+**Fix:** added `runtime.txt` (`python-3.11`) to pin Streamlit Cloud to a Python version every pinned
+package has prebuilt wheels for, avoiding source builds entirely. Also expanded `packages.txt` beyond
+just `ffmpeg` to include `pkg-config` and the FFmpeg development headers (`libavformat-dev`,
+`libavcodec-dev`, etc.) as a safety net, since `av`'s source build needs those specifically (the
+`ffmpeg` binary alone isn't enough to build `PyAV` from source, only to run it at runtime).
