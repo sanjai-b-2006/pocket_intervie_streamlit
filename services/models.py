@@ -1,0 +1,68 @@
+import uuid
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
+
+
+def gen_id() -> str:
+    return uuid.uuid4().hex
+
+
+@dataclass
+class Question:
+    text: str
+    sample_answer: str = ""
+    persona: str = ""
+    is_dynamic: bool = False
+    id: str = field(default_factory=gen_id)
+    answer: Optional["Answer"] = None
+
+
+@dataclass
+class Answer:
+    transcript: str = ""
+    duration_sec: float = 0.0
+    words_per_minute: float = 0.0
+    pitch_variation: float = 0.0
+    filler_word_count: int = 0
+    pause_ratio: float = 0.0
+    volume_consistency: float = 0.0
+    delivery_timeline: List[Dict[str, Any]] = field(default_factory=list)
+    content_score: int = 0
+    delivery_score: int = 0
+    content_feedback: str = ""
+    delivery_feedback: str = ""
+
+
+@dataclass
+class InterviewSession:
+    role: str
+    company: str = ""
+    experience_level: str = ""
+    job_description: str = ""
+    session_type: str = "job_interview"
+    persona: str = ""
+    panel_mode: bool = False
+    drill_focus: str = ""
+    questions: List[Question] = field(default_factory=list)
+    id: str = field(default_factory=gen_id)
+    summary: str = ""
+    top_actions: List[str] = field(default_factory=list)
+    cheat_sheet: str = ""
+
+    @property
+    def answered_questions(self) -> List[Question]:
+        return [q for q in self.questions if q.answer is not None]
+
+    @property
+    def avg_content_score(self) -> int:
+        answered = self.answered_questions
+        if not answered:
+            return 0
+        return round(sum(q.answer.content_score for q in answered) / len(answered))
+
+    @property
+    def avg_delivery_score(self) -> int:
+        answered = self.answered_questions
+        if not answered:
+            return 0
+        return round(sum(q.answer.delivery_score for q in answered) / len(answered))
