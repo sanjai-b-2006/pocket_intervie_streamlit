@@ -66,6 +66,8 @@ The core idea is a **hybrid pipeline**: cheap, private voice analysis runs local
 reasoning is split across two independent models — **Gemma 4 as the coach** and a **Fireworks-hosted
 model on AMD Instinct GPUs as the hiring manager**.
 
+![Pocket Interview Coach architecture](assets/architecture.svg)
+
 ```mermaid
 flowchart TD
     A["🧑 Setup<br/>role · company · job description<br/>resume · persona · difficulty · timer"] --> B["🧠 Gemma 4<br/>generate tailored interview questions"]
