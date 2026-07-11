@@ -60,6 +60,56 @@ edition was built. Links to that original version:
 - **🎯 Job-description keyword coverage** — which key terms from the JD you actually worked into
   your spoken answers, and which you missed
 
+## How it works — full workflow
+
+The core idea is a **hybrid pipeline**: cheap, private voice analysis runs locally, and the heavy
+reasoning is split across two independent models — **Gemma 4 as the coach** and a **Fireworks-hosted
+model on AMD Instinct GPUs as the hiring manager**.
+
+```mermaid
+flowchart TD
+    A["🧑 Setup<br/>role · company · job description<br/>resume · persona · difficulty · timer"] --> B["🧠 Gemma 4<br/>generate tailored interview questions"]
+    B --> C{"For each question"}
+    C --> D["🎙️ Record spoken answer"]
+    D --> E["faster-whisper<br/>speech → transcript"]
+    D --> F["librosa<br/>prosody: pace, tone,<br/>fillers, pauses, steadiness"]
+    E --> G["🧠 Gemma 4<br/>score content + delivery<br/>STAR check · coaching · follow-up"]
+    F --> G
+    G --> H{"Answer left<br/>something unexplored?"}
+    H -- "yes" --> I["➕ Insert devil's-advocate<br/>follow-up question"]
+    I --> C
+    H -- "no" --> C
+    C == "all answered" ==> J["🧠 Gemma 4<br/>session report:<br/>summary + top 3 actions"]
+    J --> K["🔥 Fireworks on AMD<br/>independent hiring verdict:<br/>hire / no-hire + confidence"]
+    J --> L["🎯 JD keyword coverage<br/>(local text match)"]
+    K --> M["📄 Readiness grade · cheat sheet<br/>PDF / JSON / transcript export"]
+    L --> M
+```
+
+### Step by step
+
+1. **Setup** — you enter a target role and optionally a company, job description, resume,
+   interviewer persona, panel mode, difficulty, session type, and a pressure timer.
+2. **Question generation** — Gemma 4 writes a tailored set of questions (a guaranteed warm-up first,
+   then role-specific behavioral + technical questions ordered easy → hard), with a model answer for
+   each.
+3. **Record** — for each question, you record a spoken answer in the browser (`streamlit-mic-recorder`).
+4. **Transcribe (local)** — `faster-whisper` converts your speech to text on CPU.
+5. **Delivery metrics (local)** — `librosa` extracts words-per-minute, pitch variation (monotone vs
+   expressive), filler-word count, pause ratio, and volume steadiness, plus a per-answer timeline.
+6. **Coach (Gemma 4)** — transcript + metrics go to Gemma 4, which returns a content score, a
+   delivery score, plain-English feedback on both, a STAR-method checklist, and — if the answer left
+   something open — a devil's-advocate **follow-up question** that gets inserted into the session.
+7. **Repeat** until every question (including any dynamic follow-ups) is answered. You can **re-record**
+   any answer.
+8. **Report (Gemma 4)** — an end-of-session summary, an overall readiness grade, score trends, and a
+   personalized cheat sheet.
+9. **Hiring verdict (Fireworks on AMD)** — an *independent* model reviews the whole interview and
+   commits to a real hire / no-hire call with confidence, the case for/against you, and your standout
+   moment. The same model powers **"level up this answer."**
+10. **Take it away** — job-description keyword coverage, plus one-click **PDF / JSON / transcript**
+    exports.
+
 ## What's different from the FastAPI + Next.js version
 
 Streamlit's rerun-based execution model doesn't support a few things the original had, so this
