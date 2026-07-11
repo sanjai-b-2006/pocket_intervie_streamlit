@@ -255,10 +255,13 @@ def star_checklist(star_components: dict):
 def countdown_timer(seconds: int, key: str):
     st.components.v1.html(
         f"""
+        <div style="display:flex; justify-content:center; width:100%;">
         <div id="timer-{key}" style="
-            font-family: monospace; font-size: 1rem; color: #cfcfe6; text-align: center;
-            border: 1px solid #292942; border-radius: 999px; padding: 6px 14px; display: inline-block;">
+            font-family: monospace; font-size: 1.05rem; font-weight: 600; color: #cfcfe6;
+            text-align: center; background: rgba(255,255,255,0.04);
+            border: 1px solid #292942; border-radius: 999px; padding: 6px 18px; display: inline-block;">
             ⏱ --:--
+        </div>
         </div>
         <script>
         (function() {{
@@ -577,9 +580,7 @@ def session_page():
                     unsafe_allow_html=True,
                 )
                 if st.session_state.timer_enabled:
-                    tcols = st.columns([1, 1, 1])
-                    with tcols[1]:
-                        countdown_timer(st.session_state.timer_seconds, key=f"timer_{question.id}_{attempt}")
+                    countdown_timer(st.session_state.timer_seconds, key=f"timer_{question.id}_{attempt}")
                 rec_cols = st.columns([1, 2, 1])
                 with rec_cols[1]:
                     audio = mic_recorder(
