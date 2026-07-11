@@ -420,6 +420,23 @@ def setup_page():
 
     surprise_role, surprise_company = st.session_state.surprise_pick or ("", "")
 
+    # Timer controls live OUTSIDE the form: widgets inside an st.form don't rerun on change, so a
+    # slider disabled by an in-form checkbox would never re-enable until submit. Out here, ticking
+    # the checkbox reruns immediately and un-greys the slider.
+    with st.container(border=True):
+        tcol1, tcol2 = st.columns([1, 2])
+        with tcol1:
+            st.checkbox("⏱ Answer timer", key="timer_enabled")
+        with tcol2:
+            st.slider(
+                "Timer duration (seconds)",
+                30,
+                300,
+                step=15,
+                key="timer_seconds",
+                disabled=not st.session_state.timer_enabled,
+            )
+
     with st.form("setup_form"):
         role = st.text_input(
             "Target role",
@@ -453,14 +470,6 @@ def setup_page():
 
         sample_mode_label = st.radio("Sample answers", list(SAMPLE_ANSWER_MODES.keys()), horizontal=True, index=1)
 
-        tcol1, tcol2 = st.columns([1, 2])
-        with tcol1:
-            timer_enabled = st.checkbox("Enable answer timer", value=st.session_state.timer_enabled)
-        with tcol2:
-            timer_seconds = st.slider(
-                "Timer duration (seconds)", 30, 300, st.session_state.timer_seconds, step=15, disabled=not timer_enabled
-            )
-
         drill_focus = prefill.get("drill_focus", "")
         if drill_focus:
             st.info(f"🎯 Weakness drill: focused practice on **{drill_focus}**")
@@ -473,8 +482,6 @@ def setup_page():
             return
 
         st.session_state.sample_answer_mode = SAMPLE_ANSWER_MODES[sample_mode_label]
-        st.session_state.timer_enabled = timer_enabled
-        st.session_state.timer_seconds = timer_seconds
         st.session_state.surprise_pick = None
 
         resume_text = ""
