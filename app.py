@@ -114,6 +114,7 @@ def init_state():
         "timer_enabled": False,
         "timer_seconds": 90,
         "surprise_pick": None,
+        "attempts": {},  # question.id -> recording attempt number (bumped to reset the recorder)
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -522,6 +523,21 @@ def setup_page():
         st.rerun()
 
 
+def reset_answer(session: InterviewSession, question: Question):
+    """Clear a recorded answer so the candidate can try the same question again."""
+    question.answer = None  # the improved_answer rewrite lives on the Answer, so it's cleared too
+    st.session_state.current_feedback = None
+    # Bump the attempt counter so the mic_recorder gets a fresh key and won't replay old audio.
+    st.session_state.attempts[question.id] = st.session_state.attempts.get(question.id, 0) + 1
+    # Drop a not-yet-answered follow-up this answer had previously spawned, so re-recording
+    # doesn't leave stale/duplicate follow-ups behind.
+    i = session.questions.index(question)
+    if i + 1 < len(session.questions):
+        nxt = session.questions[i + 1]
+        if nxt.is_dynamic and nxt.answer is None:
+            session.questions.pop(i + 1)
+
+
 def session_page():
     session: InterviewSession = st.session_state.session
     idx = st.session_state.current_index
@@ -549,14 +565,32 @@ def session_page():
         st.markdown(f'<div class="question-text">{question.text}</div>', unsafe_allow_html=True)
 
         if question.answer is None:
-            st.markdown(
-                '<div class="answer-hint">Take a breath, then answer out loud — speak naturally, '
-                "as you would in the real interview.</div>",
-                unsafe_allow_html=True,
-            )
-            if st.session_state.timer_enabled:
-                countdown_timer(st.session_state.timer_seconds, key=f"timer_{question.id}")
-            audio = mic_recorder(start_prompt="🎙️ Record Answer", stop_prompt="⏹️ Stop recording", format="wav", key=f"rec_{question.id}")
+            attempt = st.session_state.attempts.get(question.id, 0)
+            with st.container(border=True):
+                retry_note = " · this is a re-take" if attempt else ""
+                st.markdown(
+                    '<div style="text-align:center;">'
+                    '<div style="font-size:2rem;">🎙️</div>'
+                    '<div class="answer-hint" style="text-align:center;">'
+                    "Take a breath, then answer out loud — speak naturally, as you would in the "
+                    f"real interview.{retry_note}</div></div>",
+                    unsafe_allow_html=True,
+                )
+                if st.session_state.timer_enabled:
+                    tcols = st.columns([1, 1, 1])
+                    with tcols[1]:
+                        countdown_timer(st.session_state.timer_seconds, key=f"timer_{question.id}_{attempt}")
+                rec_cols = st.columns([1, 2, 1])
+                with rec_cols[1]:
+                    audio = mic_recorder(
+                        start_prompt="🎙️  Record answer",
+                        stop_prompt="⏹️  Stop & analyze",
+                        just_once=True,
+                        use_container_width=True,
+                        format="wav",
+                        key=f"rec_{question.id}_{attempt}",
+                    )
+                st.caption("Click **Record**, speak, then click **Stop & analyze**.")
             if audio and audio.get("bytes"):
                 with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
                     tmp.write(audio["bytes"])
@@ -616,13 +650,19 @@ def session_page():
             level_up_answer(question, key=f"session_{question.id}")
 
             is_last = idx + 1 == len(session.questions)
-            if st.button("View Report" if is_last else "Next Question →", type="primary", use_container_width=True):
-                st.session_state.current_feedback = None
-                if is_last:
-                    st.session_state.page = "report"
-                else:
-                    st.session_state.current_index += 1
-                st.rerun()
+            nav_cols = st.columns([1, 1])
+            with nav_cols[0]:
+                if st.button("🔄 Re-record", key=f"rerec_{question.id}", use_container_width=True):
+                    reset_answer(session, question)
+                    st.rerun()
+            with nav_cols[1]:
+                if st.button("View Report" if is_last else "Next Question →", type="primary", use_container_width=True):
+                    st.session_state.current_feedback = None
+                    if is_last:
+                        st.session_state.page = "report"
+                    else:
+                        st.session_state.current_index += 1
+                    st.rerun()
 
 
 def compute_weakest_area(session: InterviewSession) -> str:
