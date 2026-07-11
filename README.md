@@ -14,6 +14,22 @@ more reliable free hosting (Streamlit Community Cloud). The core AI pipeline (qu
 speech-to-text, delivery-metric analysis, scoring, follow-ups, cheat sheets) is identical — only the
 UI framework and hosting model changed.
 
+## Links
+
+- **Live app (this Streamlit version):** https://pocket-interview.streamlit.app
+
+### The original FastAPI + Next.js version
+
+The first version was a two-service app — a FastAPI backend on **Render** and a Next.js frontend on
+**Vercel**. It's more feature-complete (live in-recording coaching, animations, PWA install), but
+Render's free tier proved **slow and memory-constrained** (50+ second cold starts and out-of-memory
+restarts under the whisper + librosa workload), which is exactly why this simpler, faster Streamlit
+edition was built. Links to that original version:
+
+- **Code (FastAPI + Next.js):** https://github.com/sanjai-b-2006/pocket_interview_new
+- **Frontend (Vercel):** https://pocket-interview-new.vercel.app
+- **Backend API (Render — note: slow to cold-start on the free tier):** https://pocket-interview-new.onrender.com
+
 ## Features
 
 - Role, company, job description, resume upload, experience level, and number-of-questions setup
