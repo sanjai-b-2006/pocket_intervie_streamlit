@@ -1,5 +1,6 @@
 import os
 import random
+import re
 import tempfile
 
 import plotly.graph_objects as go
@@ -74,6 +75,25 @@ st.markdown(
         color: #cfcfe6;
         background: rgba(255,255,255,0.04);
     }}
+    .qtag {{
+        display: inline-block;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        padding: 3px 12px;
+        border-radius: 999px;
+        text-transform: uppercase;
+    }}
+    .qtag-question {{ color: {ACCENT_2}; background: rgba(45,212,238,0.12); border: 1px solid rgba(45,212,238,0.4); }}
+    .qtag-followup {{ color: {ACCENT_3}; background: rgba(255,138,92,0.12); border: 1px solid rgba(255,138,92,0.45); }}
+    .question-text {{
+        font-size: 1.9rem;
+        line-height: 1.3;
+        font-weight: 700;
+        margin: 14px 0 6px 0;
+        color: #f7f7fb;
+    }}
+    .answer-hint {{ color: #8888a0; font-size: 0.9rem; margin: 2px 0 8px 0; }}
     </style>
     """,
     unsafe_allow_html=True,
@@ -142,8 +162,11 @@ def speak_button(text: str, key: str):
     st.components.v1.html(
         f"""
         <button id="speak-{key}" style="
-            background: rgba(255,255,255,0.06); border: 1px solid #292942; color: #cfcfe6;
-            border-radius: 999px; padding: 6px 14px; font-size: 0.8rem; cursor: pointer;">
+            background: rgba(155,107,255,0.12); border: 1px solid {ACCENT}; color: #e9e4ff;
+            border-radius: 999px; padding: 8px 18px; font-size: 0.85rem; font-weight: 600;
+            cursor: pointer; white-space: nowrap; transition: background 0.15s;"
+            onmouseover="this.style.background='rgba(155,107,255,0.24)'"
+            onmouseout="this.style.background='rgba(155,107,255,0.12)'">
             🔊 Play question
         </button>
         <script>
@@ -155,7 +178,7 @@ def speak_button(text: str, key: str):
         }};
         </script>
         """,
-        height=40,
+        height=52,
     )
 
 
@@ -506,20 +529,27 @@ def session_page():
     st.progress((idx) / max(len(session.questions), 1))
 
     with st.container(border=True):
-        header_cols = st.columns([4, 1])
+        header_cols = st.columns([3, 1])
         with header_cols[0]:
-            st.caption(("FOLLOW-UP" if question.is_dynamic else "QUESTION"))
+            tag_class = "qtag-followup" if question.is_dynamic else "qtag-question"
+            tag_label = "🔍 Follow-up" if question.is_dynamic else "Question"
+            badges = f'<span class="qtag {tag_class}">{tag_label}</span>'
             if question.persona:
-                st.markdown(f'<span class="persona-badge">{question.persona.replace("_", " ").title()}</span>', unsafe_allow_html=True)
+                badges += f'&nbsp;<span class="persona-badge">{question.persona.replace("_", " ").title()}</span>'
+            st.markdown(badges, unsafe_allow_html=True)
         with header_cols[1]:
             speak_button(question.text, key=question.id)
-        st.markdown(f"### {question.text}")
+        st.markdown(f'<div class="question-text">{question.text}</div>', unsafe_allow_html=True)
 
         if question.answer is None:
-            st.write("")
+            st.markdown(
+                '<div class="answer-hint">Take a breath, then answer out loud — speak naturally, '
+                "as you would in the real interview.</div>",
+                unsafe_allow_html=True,
+            )
             if st.session_state.timer_enabled:
                 countdown_timer(st.session_state.timer_seconds, key=f"timer_{question.id}")
-            audio = mic_recorder(start_prompt="🎙️ Record Answer", stop_prompt="⏹️ Stop", format="wav", key=f"rec_{question.id}")
+            audio = mic_recorder(start_prompt="🎙️ Record Answer", stop_prompt="⏹️ Stop recording", format="wav", key=f"rec_{question.id}")
             if audio and audio.get("bytes"):
                 with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
                     tmp.write(audio["bytes"])

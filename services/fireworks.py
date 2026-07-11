@@ -9,7 +9,7 @@ idle just because Gemma 4 itself isn't on Fireworks yet.
 
 import json
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 import httpx
 
