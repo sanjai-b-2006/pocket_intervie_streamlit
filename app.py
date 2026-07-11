@@ -9,6 +9,7 @@ from streamlit_mic_recorder import mic_recorder
 from services import export as export_service
 from services import interview
 from services import resume as resume_service
+from services.fireworks import FireworksError, fireworks_judge
 from services.llm import LLMOverride, PERSONAS, SESSION_TYPES
 from services.models import InterviewSession, Question
 
@@ -34,6 +35,25 @@ SURPRISE_ROLES = [
 EXPERIENCE_LEVELS = ["Entry-level (0-1 yrs)", "Mid-level (2-5 yrs)", "Senior (5+ yrs)", "Staff/Lead (8+ yrs)"]
 SAMPLE_ANSWER_MODES = {"After each answer": "after", "At the end": "end", "Don't show": "off"}
 STAR_LABELS = {"situation": "Situation", "task": "Task", "action": "Action", "result": "Result"}
+
+VERDICT_COLORS = {
+    "Strong Hire": "#27c98f",
+    "Hire": "#3fae6d",
+    "Lean Hire": "#8bb84a",
+    "Lean No-Hire": "#e0a63c",
+    "No-Hire": "#e07a3c",
+    "Strong No-Hire": "#e0563c",
+}
+
+# Boilerplate/stopwords stripped out before computing job-description keyword coverage.
+_STOPWORDS = set(
+    "the a an and or but for with without to of in on at by from as is are be been being this that "
+    "these those you your we our us they their it its will would should can could may might must have "
+    "has had do does did not no yes if then than so such about into over under more most other some "
+    "any all each both few many who whom which what when where why how work working role team teams "
+    "experience years year strong ability able skills skill required requirements responsibilities "
+    "including etc across using use used within per via new plus etc.".split()
+)
 
 st.markdown(
     f"""
@@ -109,6 +129,12 @@ def render_sidebar():
             st.session_state.byok_model = st.text_input(
                 "Model", value=st.session_state.byok_model, placeholder="google/gemma-4-26b-a4b-it"
             )
+        st.markdown("---")
+        judge_on = fireworks_judge.is_configured()
+        st.caption(
+            "🧠 **Coach:** Gemma 4\n\n"
+            + ("🔥 **Hiring manager:** Fireworks AI on AMD" if judge_on else "🔥 Fireworks verdict: _add JUDGE_API_KEY_")
+        )
 
 
 def speak_button(text: str, key: str):
@@ -232,12 +258,134 @@ def countdown_timer(seconds: int, key: str):
     )
 
 
+def level_up_answer(question: Question, key: str):
+    """Fireworks-powered rewrite of the candidate's own answer into a stronger version."""
+    if not fireworks_judge.is_configured():
+        return
+    answer = question.answer
+    if not answer:
+        return
+    if answer.improved_answer:
+        with st.expander("⚡ Level up this answer (Fireworks)", expanded=False):
+            st.markdown("**Your answer, leveled up by a Fireworks model on AMD:**")
+            st.success(answer.improved_answer)
+        return
+    if st.button("⚡ Level up this answer", key=f"levelup_{key}", help="Rewrite your answer into a stronger version (Fireworks on AMD)"):
+        with st.spinner("Fireworks is rewriting your answer..."):
+            try:
+                answer.improved_answer = fireworks_judge.rewrite_answer(
+                    question.text, answer.transcript, st.session_state.session.role
+                )
+            except FireworksError as exc:
+                st.warning(f"Couldn't reach Fireworks for the rewrite: {exc}")
+                return
+        st.rerun()
+
+
+def render_hiring_verdict(session: InterviewSession):
+    """Independent hire/no-hire call from a Fireworks-hosted model (a true second opinion)."""
+    if not fireworks_judge.is_configured():
+        with st.container(border=True):
+            st.markdown("### 🔥 Independent hiring verdict")
+            st.caption(
+                "Powered by a Fireworks model on AMD Instinct GPUs — a second opinion independent "
+                "of the Gemma 4 coach. Add a `JUDGE_API_KEY` (your Fireworks key) to enable it."
+            )
+        return
+
+    if session.hiring_verdict is None:
+        with st.container(border=True):
+            st.markdown("### 🔥 Independent hiring verdict")
+            st.caption("An independent Fireworks model on AMD reviews the whole interview and makes a real call.")
+            if st.button("Get the hiring manager's verdict", type="primary"):
+                with st.spinner("Fireworks hiring manager is deliberating..."):
+                    try:
+                        session.hiring_verdict = fireworks_judge.hiring_verdict(session)
+                    except FireworksError as exc:
+                        st.warning(f"Couldn't reach Fireworks: {exc}")
+                        return
+                st.rerun()
+        return
+
+    v = session.hiring_verdict
+    decision = v.get("decision", "Lean Hire")
+    color = VERDICT_COLORS.get(decision, ACCENT)
+    confidence = int(v.get("confidence", 0) or 0)
+    with st.container(border=True):
+        st.markdown(
+            f'<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">'
+            f'<span style="background:{color};color:#0b0b12;font-weight:800;font-size:1.1rem;'
+            f'border-radius:10px;padding:8px 18px;">{decision}</span>'
+            f'<span style="color:#8888a0;">🔥 Fireworks AI on AMD · {confidence}% confidence</span>'
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        st.progress(confidence / 100)
+        if v.get("rationale"):
+            st.write(v["rationale"])
+        vc = st.columns(2)
+        with vc[0]:
+            st.markdown(f"✅ **Case for:** {v.get('case_for', '—')}")
+        with vc[1]:
+            st.markdown(f"⚠️ **Biggest concern:** {v.get('case_against', '—')}")
+        if v.get("standout_moment"):
+            st.caption(f"💬 Standout: {v['standout_moment']}")
+
+
+def jd_coverage(session: InterviewSession):
+    """Which meaningful job-description keywords the candidate actually said out loud."""
+    jd = (session.job_description or "").lower()
+    words = re.findall(r"[a-zA-Z][a-zA-Z+#.]{2,}", jd)
+    keywords, seen = [], set()
+    for w in words:
+        cleaned = w.strip(".")
+        if cleaned in _STOPWORDS or cleaned in seen or len(cleaned) < 3:
+            continue
+        seen.add(cleaned)
+        keywords.append(cleaned)
+    keywords = keywords[:18]
+    if not keywords:
+        return None
+    spoken = " ".join(q.answer.transcript.lower() for q in session.answered_questions)
+    covered = [k for k in keywords if k in spoken]
+    missing = [k for k in keywords if k not in spoken]
+    pct = round(100 * len(covered) / len(keywords))
+    return covered, missing, pct
+
+
+def render_jd_coverage(session: InterviewSession):
+    result = jd_coverage(session)
+    if result is None:
+        return
+    covered, missing, pct = result
+    with st.container(border=True):
+        st.markdown(f"### 🎯 Job-description keyword coverage: {pct}%")
+        st.caption("Key terms from the job description you actually worked into your answers.")
+        st.progress(pct / 100)
+        if covered:
+            st.markdown("**Mentioned:** " + " ".join(f"`{k}`" for k in covered))
+        if missing:
+            st.markdown("**Not mentioned:** " + " ".join(f"`{k}`" for k in missing))
+
+
 def setup_page():
     st.markdown('<h1 class="gradient-text">Pocket Interview Coach</h1>', unsafe_allow_html=True)
     st.write(
         "Practice out loud. Get coached on what you said **and** how you said it — "
         "pace, tone, filler words, and confidence."
     )
+    hcols = st.columns(3)
+    for col, (icon, title, body) in zip(
+        hcols,
+        [
+            ("🗣️", "Speak", "Record real spoken answers to tailored questions."),
+            ("🧠", "Get coached", "Gemma 4 scores your content **and** delivery."),
+            ("🔥", "Get judged", "A Fireworks model on AMD gives a hire/no-hire verdict."),
+        ],
+    ):
+        with col:
+            st.markdown(f"#### {icon} {title}")
+            st.caption(body)
 
     prefill = st.session_state.drill_prefill or {}
 
@@ -428,6 +576,8 @@ def session_page():
                 with st.expander("Sample answer"):
                     st.write(question.sample_answer)
 
+            level_up_answer(question, key=f"session_{question.id}")
+
             is_last = idx + 1 == len(session.questions)
             if st.button("View Report" if is_last else "Next Question →", type="primary", use_container_width=True):
                 st.session_state.current_feedback = None
@@ -483,6 +633,9 @@ def report_page():
         score_gauge(session.avg_delivery_score, "Avg Delivery", ACCENT_2)
 
     st.write(session.summary)
+
+    render_hiring_verdict(session)
+    render_jd_coverage(session)
 
     answered = session.answered_questions
 
@@ -569,6 +722,7 @@ def report_page():
             if st.session_state.sample_answer_mode == "end" and q.sample_answer:
                 st.markdown("**Sample answer:**")
                 st.write(q.sample_answer)
+            level_up_answer(q, key=f"report_{q.id}")
 
     if st.button("Start New Interview", use_container_width=True):
         st.session_state.page = "setup"

@@ -30,6 +30,18 @@ def generate_report_pdf(session: InterviewSession) -> bytes:
     _line(pdf, f"Avg content: {session.avg_content_score}/100  |  Avg delivery: {session.avg_delivery_score}/100")
     pdf.ln(4)
 
+    if session.hiring_verdict:
+        v = session.hiring_verdict
+        _line(pdf, "Independent Hiring Verdict (Fireworks AI on AMD)", size=13, style="B")
+        _line(pdf, f"Decision: {v.get('decision', '-')}  |  Confidence: {v.get('confidence', '-')}%")
+        if v.get("rationale"):
+            _line(pdf, v["rationale"])
+        if v.get("case_for"):
+            _line(pdf, f"Case for: {v['case_for']}")
+        if v.get("case_against"):
+            _line(pdf, f"Biggest concern: {v['case_against']}")
+        pdf.ln(2)
+
     _line(pdf, "Summary", size=13, style="B")
     _line(pdf, session.summary or "")
     pdf.ln(2)
@@ -75,6 +87,7 @@ def generate_report_json(session: InterviewSession) -> str:
         "avg_content_score": session.avg_content_score,
         "avg_delivery_score": session.avg_delivery_score,
         "readiness": session.readiness,
+        "hiring_verdict": session.hiring_verdict,
         "summary": session.summary,
         "top_actions": session.top_actions,
         "answers": [
@@ -86,6 +99,7 @@ def generate_report_json(session: InterviewSession) -> str:
                 "content_feedback": q.answer.content_feedback,
                 "delivery_feedback": q.answer.delivery_feedback,
                 "star_components": q.answer.star_components,
+                "improved_answer": q.answer.improved_answer,
                 "words_per_minute": q.answer.words_per_minute,
                 "filler_word_count": q.answer.filler_word_count,
             }

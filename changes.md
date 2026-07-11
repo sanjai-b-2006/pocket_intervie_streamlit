@@ -160,3 +160,51 @@ package has prebuilt wheels for, avoiding source builds entirely. Also expanded 
 just `ffmpeg` to include `pkg-config` and the FFmpeg development headers (`libavformat-dev`,
 `libavcodec-dev`, etc.) as a safety net, since `av`'s source build needs those specifically (the
 `ffmpeg` binary alone isn't enough to build `PyAV` from source, only to run it at runtime).
+
+**Follow-up:** `runtime.txt` turned out to only take effect at *initial app creation* — an already-
+provisioned app kept its Python 3.14 environment on redeploy. The reliable fix is to set the Python
+version explicitly in the app's **Settings → General → Python version** on share.streamlit.io (or
+delete and recreate the app), which forces a fresh 3.11 environment with prebuilt wheels.
+
+## 9. Actually using the Fireworks API (dual-AI design)
+
+The whole premise of the hackathon is Fireworks AI credits on AMD hardware, but Gemma 4 still isn't
+deployed on the Fireworks account (re-checked with the fresh key: `/v1/models` returns
+`gpt-oss-120b`, `deepseek-v4-pro`, `glm-5p2`, `kimi-k2p5/p6`, `flux-1-schnell` — strong models, just
+no Gemma). Rather than leave the Fireworks key unused, the app now runs **two different models for
+two different jobs**:
+
+- **Gemma 4 (via OpenRouter) = the coach** — generates questions, scores each answer's content and
+  delivery, asks devil's-advocate follow-ups, writes the cheat sheet.
+- **A Fireworks-hosted model on AMD Instinct GPUs = the hiring manager** (`services/fireworks.py`) —
+  independently reviews the whole interview and commits to a real **Strong Hire → No-Hire verdict**
+  with confidence, rationale, case-for/case-against, and a standout moment. It also powers
+  **"⚡ Level up this answer"**, rewriting the candidate's *own* answer into a stronger version
+  (grounded in what they actually said — the prompt explicitly forbids inventing achievements).
+
+Using two independent providers/models is the point: the verdict is a genuine second opinion, not
+the same model grading its own coaching. It's wired through separate env vars (`JUDGE_API_KEY` /
+`JUDGE_BASE_URL` / `JUDGE_MODEL`) so it stays cleanly decoupled from the Gemma path, and the feature
+degrades gracefully (hidden with a hint) if no Fireworks key is set.
+
+**Bug caught while building it — reasoning models eat the token budget.** `gpt-oss-120b` is a
+reasoning model: it spends completion tokens on hidden reasoning *before* emitting the visible
+`content`. With `max_tokens=400` on the answer-rewrite call, reasoning consumed the entire budget and
+the API returned an empty `content` field, which blew up as `KeyError: 'content'`. Caught by running
+the verdict + rewrite against the real Fireworks API with a synthetic session (no browser needed).
+Fixed by (a) raising the token budgets to ~1400 so there's room for real output after reasoning, and
+(b) handling an empty `content` explicitly with a clear "likely truncated, try again" error instead
+of a downstream crash. Also normalized Unicode dashes (the model sometimes writes "No‑Hire" with a
+non-breaking hyphen) before matching the decision against the known set, so the verdict badge/color
+lookup doesn't silently fall through.
+
+**Also added** (no API needed): a **job-description keyword-coverage meter** — extracts the
+meaningful keywords from the pasted JD and shows which ones the candidate actually said out loud
+across their answers vs. which they missed — plus a "how it works" strip on the landing page and a
+"Coach: Gemma 4 / Hiring manager: Fireworks on AMD" credit in the sidebar.
+
+**Note on the local test discrepancy:** the dev machine has legacy `PyFPDF 1.7.2` installed, whose
+`output()` prints to a cp1252 console and crashes on non-latin characters. The app pins **`fpdf2`**
+in `requirements.txt` (a different, incompatible library despite the similar name), which is what
+runs on Streamlit Cloud and handles the export correctly — so a local PDF-export crash here is an
+environment artifact, not an app bug.

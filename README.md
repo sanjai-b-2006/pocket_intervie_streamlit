@@ -1,7 +1,13 @@
 # Pocket Interview Coach (Streamlit Edition)
 
 A single-process Streamlit rebuild of Pocket Interview Coach — live mock-interview practice with AI
-coaching on **content** (what you said) and **delivery** (how you said it), powered by Gemma 4.
+coaching on **content** (what you said) and **delivery** (how you said it).
+
+**Two independent AIs, two roles:** **Gemma 4** is your *coach* (question generation, per-answer
+scoring, follow-ups, cheat sheets), and a separate **Fireworks-hosted model running on AMD Instinct
+GPUs** plays the *hiring manager* — reviewing the whole interview and making a real hire / no-hire
+call, plus rewriting your own answers into stronger versions. Using two different providers/models
+means the final verdict is a genuine second opinion, not the coach grading itself.
 
 This is a from-scratch Streamlit port of the original FastAPI + Next.js version, built for simpler,
 more reliable free hosting (Streamlit Community Cloud). The core AI pipeline (question generation,
@@ -31,6 +37,12 @@ UI framework and hosting model changed.
 - **Interview readiness score + letter grade**, with a celebratory `st.balloons()` on a strong result
 - **Export your report** as PDF, plain-text transcript, or JSON, one click each
 - **"Surprise me"** role randomizer and an optional visual countdown timer during recording
+- **🔥 Independent hiring verdict** — a Fireworks model on AMD gives a Strong Hire → No-Hire call
+  with confidence, rationale, the case for/against you, and your standout moment
+- **⚡ Level up this answer** — a Fireworks model rewrites your *own* answer into a stronger version
+  (grounded in what you actually said — no invented achievements)
+- **🎯 Job-description keyword coverage** — which key terms from the JD you actually worked into
+  your spoken answers, and which you missed
 
 ## What's different from the FastAPI + Next.js version
 
@@ -72,9 +84,15 @@ docker run -p 8501:8501 --env-file .env pocket-interview-streamlit
 2. Go to **share.streamlit.io** → **New app** → select this repo, branch `main`, main file `app.py`.
 3. Under **Advanced settings → Secrets**, add:
    ```toml
-   FIREWORKS_API_KEY = "your_key"
+   # Coach (Gemma 4)
+   FIREWORKS_API_KEY = "your_openrouter_key"
    FIREWORKS_BASE_URL = "https://openrouter.ai/api/v1"
    GEMMA_MODEL = "google/gemma-4-26b-a4b-it"
+
+   # Independent hiring manager (Fireworks on AMD) — enables the verdict + answer rewrite
+   JUDGE_API_KEY = "your_fireworks_key"
+   JUDGE_BASE_URL = "https://api.fireworks.ai/inference/v1"
+   JUDGE_MODEL = "accounts/fireworks/models/gpt-oss-120b"
    ```
 4. Deploy. Streamlit Cloud installs `requirements.txt` (Python packages) and `packages.txt` (system
    packages -- just `ffmpeg`, needed by `faster-whisper`/`librosa`) automatically. No Dockerfile
@@ -86,9 +104,12 @@ docker run -p 8501:8501 --env-file .env pocket-interview-streamlit
 
 | Variable | Purpose |
 |---|---|
-| `FIREWORKS_API_KEY` | LLM API key (OpenRouter or Fireworks) |
+| `FIREWORKS_API_KEY` | Coach (Gemma 4) API key — OpenRouter or Fireworks |
 | `FIREWORKS_BASE_URL` | `https://openrouter.ai/api/v1` or `https://api.fireworks.ai/inference/v1` |
 | `GEMMA_MODEL` | Exact model slug for your provider |
+| `JUDGE_API_KEY` | Fireworks key for the independent hiring verdict + answer rewrite (blank = feature disabled) |
+| `JUDGE_BASE_URL` | `https://api.fireworks.ai/inference/v1` (default) |
+| `JUDGE_MODEL` | `accounts/fireworks/models/gpt-oss-120b` (default) |
 | `ASR_DEVICE` | `cpu` (default) |
 | `ASR_MODEL_SIZE` | `base` (default) — use `tiny` on memory-constrained hosts |
 | `ENABLE_PITCH_ANALYSIS` | `true` (default) — set `false` to skip the memory-heavier pitch-tracking pass on constrained hosts |
@@ -99,7 +120,8 @@ docker run -p 8501:8501 --env-file .env pocket-interview-streamlit
 app.py                   Single-file Streamlit UI (setup / session / report screens)
 services/
   config.py               Env-var settings
-  llm.py                  Gemma 4 client: question generation, personas, session types, feedback, cheat sheets
+  llm.py                  Gemma 4 coach: question generation, personas, session types, feedback, cheat sheets
+  fireworks.py            Independent Fireworks (AMD) hiring manager: hire/no-hire verdict + answer rewrite
   asr.py                  faster-whisper speech-to-text
   prosody.py              librosa-based delivery metrics (pace, tone, pauses, filler words, timeline)
   resume.py                PDF/text resume extraction

@@ -33,6 +33,7 @@ class Answer:
     delivery_feedback: str = ""
     star_components: Dict[str, bool] = field(default_factory=dict)
     audio_bytes: Optional[bytes] = None
+    improved_answer: str = ""  # Fireworks-generated stronger rewrite of this answer (cached)
 
 
 @dataclass
@@ -50,6 +51,7 @@ class InterviewSession:
     summary: str = ""
     top_actions: List[str] = field(default_factory=list)
     cheat_sheet: str = ""
+    hiring_verdict: Optional[Dict[str, Any]] = None  # Fireworks judge result (cached)
 
     @property
     def answered_questions(self) -> List[Question]:
